@@ -42,7 +42,7 @@ static const Rule rules[] = {
 };
 
 /*regex patterns to match class window with*/
-static const char* regex_classes[] = { "\\.exe", "steam_proton", "Steam", "steam_app_" };
+static const char* regex_classes[] = { ".exe", "steam_proton", "Steam", "steam_app_" };
 
 /* layout(s) */
 static const float mfact     = 0.55; /* factor of master area size [0.05..0.95] */
