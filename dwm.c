@@ -20,8 +20,8 @@
  *
  * To understand everything else, start reading main().
  */
-#include <errno.h>
 #include <locale.h>
+#include <regex.h>
 #include <signal.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -146,6 +146,9 @@ typedef struct {
 	unsigned int tags;
 	int isfloating;
 	int monitor;
+	regex_t regex_class;
+	regex_t regex_instance;
+	regex_t regex_title;
 } Rule;
 
 /* function declarations */
@@ -160,6 +163,7 @@ static void checkotherwm(void);
 static void cleanup(void);
 static void cleanupmon(Monitor *mon);
 static void clientmessage(XEvent *e);
+static void compileregularexpressions();
 static void configure(Client *c);
 static void configurenotify(XEvent *e);
 static void configurerequest(XEvent *e);
@@ -197,6 +201,7 @@ static void pop(Client *c);
 static void propertynotify(XEvent *e);
 static void quit(const Arg *arg);
 static Monitor *recttomon(int x, int y, int w, int h);
+static void regexcompilehelper(regex_t* regex_pattern_buffer, const char* regular_expression);
 static void resize(Client *c, int x, int y, int w, int h, int interact);
 static void resizeclient(Client *c, int x, int y, int w, int h);
 static void resizemouse(const Arg *arg);
@@ -299,7 +304,7 @@ void
 applyrules(Client *c)
 {
 	const char *class, *instance;
-	unsigned int i;
+	unsigned int i, class_match, instance_match, title_match;
 	const Rule *r;
 	Monitor *m;
 	XClassHint ch = { NULL, NULL };
@@ -311,11 +316,14 @@ applyrules(Client *c)
 	class    = ch.res_class ? ch.res_class : broken;
 	instance = ch.res_name  ? ch.res_name  : broken;
 
-	for (i = 0; i < LENGTH(rules); i++) {
+	for (i = 0; i < LENGTH(rules); ++i)
+	{
 		r = &rules[i];
-		if ((!r->title || strstr(c->name, r->title))
-		&& (!r->class || strstr(class, r->class))
-		&& (!r->instance || strstr(instance, r->instance)))
+		class_match = (!r->class || regexec(&r->regex_class, class, 0, NULL, 0) == 0);
+		instance_match = (!r->instance || regexec(&r->regex_instance, instance, 0, NULL, 0) == 0);
+		title_match = (!r->title || regexec(&r->regex_title, c->name, 0, NULL, 0) == 0);
+
+		if (class_match && instance_match && title_match)
 		{
 			c->isfloating = r->isfloating;
 			c->tags |= r->tags;
@@ -788,7 +796,7 @@ drawbar(Monitor *m)
 	for (i = 0; i < LENGTH(tags); i++) {
 		/* do not draw vacant tags */
 		if (!(occ & 1 << i || m->tagset[m->seltags] & 1 << i))
-		continue;
+			continue;
 
 		w = TEXTW(tags[i]);
 		drw_setscheme(drw, scheme[m->tagset[m->seltags] & 1 << i ? SchemeSel : SchemeNorm]);
@@ -1067,10 +1075,39 @@ grabkeys(void)
 }
 
 void
+regexcompilehelper(regex_t* regex_pattern_buffer, const char* regular_expression)
+{
+	if (!regular_expression)
+	{
+		return;
+	}
+
+	if (regcomp(regex_pattern_buffer, regular_expression, REG_EXTENDED | REG_NOSUB))
+	{
+		die("Failed to compile regular expression: %s", regular_expression);
+	}
+}
+
+void
 incnmaster(const Arg *arg)
 {
 	selmon->nmaster = MAX(selmon->nmaster + arg->i, 0);
 	arrange(selmon);
+}
+
+void
+compileregularexpressions()
+{
+	Rule* r;
+
+	for (int i = 0; i < LENGTH(rules); ++i)
+	{
+		r = &rules[i];
+
+		regexcompilehelper(&r->regex_class, r->class);
+		regexcompilehelper(&r->regex_instance, r->instance);
+		regexcompilehelper(&r->regex_title, r->title);
+	}
 }
 
 #ifdef XINERAMA
@@ -1677,7 +1714,7 @@ setup(void)
 	cursor[CurMove] = drw_cur_create(drw, XC_fleur);
 	/* init appearance */
 	scheme = ecalloc(LENGTH(colors), sizeof(Clr *));
-  unsigned int alphas[] = {borderalpha, baralpha, OPAQUE};
+	unsigned int alphas[] = {borderalpha, baralpha, OPAQUE};
 	for (i = 0; i < LENGTH(colors); i++)
 		scheme[i] = drw_scm_create(drw, colors[i], alphas, 3);
 	/* init bars */
@@ -1704,6 +1741,8 @@ setup(void)
 	XSelectInput(dpy, root, wa.event_mask);
 	grabkeys();
 	focus(NULL);
+	/* compile regular expressions */
+	compileregularexpressions();
 }
 
 void
