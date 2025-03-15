@@ -1190,6 +1190,9 @@ manage(Window w, XWindowAttributes *wa)
 	updatewindowtype(c);
 	updatesizehints(c);
 	updatewmhints(c);
+
+	c->w = c->w > c->mon->mw ? c->mon->mw : c->w;
+	c->h = c->h > c->mon->mh ? c->mon->mh : c->h;
 	c->x = c->mon->mx + ((c->mon->mw - WIDTH(c)) / 2);
 	c->y = c->mon->my + ((c->mon->mh - HEIGHT(c)) / 2);
 	XSelectInput(dpy, w, EnterWindowMask|FocusChangeMask|PropertyChangeMask|StructureNotifyMask);
